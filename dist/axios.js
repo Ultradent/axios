@@ -1,4 +1,3 @@
-/* axios v0.9.1 | (c) 2016 by Matt Zabriskie */
 (function webpackUniversalModuleDefinition(root, factory) {
 	if(typeof exports === 'object' && typeof module === 'object')
 		module.exports = factory();
@@ -142,21 +141,20 @@ return /******/ (function(modules) { // webpackBootstrap
 	var defaultInstance = new Axios(defaults);
 	var axios = module.exports = bind(Axios.prototype.request, defaultInstance);
 	
+	// Expose properties from defaultInstance
+	axios.defaults = defaultInstance.defaults;
+	axios.interceptors = defaultInstance.interceptors;
+	
+	// Factory for creating new instances
 	axios.create = function create(defaultConfig) {
 	  return new Axios(defaultConfig);
 	};
-	
-	// Expose defaults
-	axios.defaults = defaultInstance.defaults;
 	
 	// Expose all/spread
 	axios.all = function all(promises) {
 	  return Promise.all(promises);
 	};
 	axios.spread = __webpack_require__(16);
-	
-	// Expose interceptors
-	axios.interceptors = defaultInstance.interceptors;
 	
 	// Provide aliases for supported request methods
 	utils.forEach(['delete', 'get', 'head'], function forEachMethodNoData(method) {
@@ -197,7 +195,7 @@ return /******/ (function(modules) { // webpackBootstrap
 	};
 	
 	module.exports = {
-	  transformRequest: [function transformResponseJSON(data, headers) {
+	  transformRequest: [function transformRequestJSON(data, headers) {
 	    if (utils.isFormData(data)) {
 	      return data;
 	    }
@@ -523,11 +521,11 @@ return /******/ (function(modules) { // webpackBootstrap
 	      if (typeof config.adapter === 'function') {
 	        // For custom adapter support
 	        adapter = config.adapter;
-	      } else if (typeof XMLHttpRequest !== 'undefined') {
-	        // For browsers use XHR adapter
-	        adapter = __webpack_require__(5);
 	      } else if (typeof process !== 'undefined') {
 	        // For node use HTTP adapter
+	        adapter = __webpack_require__(5);
+	      } else if (typeof XMLHttpRequest !== 'undefined') {
+	        // For browsers use XHR adapter
 	        adapter = __webpack_require__(5);
 	      }
 	
@@ -564,11 +562,16 @@ return /******/ (function(modules) { // webpackBootstrap
 	  }
 	
 	  var request = new XMLHttpRequest();
+	  var loadEvent = 'onreadystatechange';
+	  var xDomain = false;
 	
 	  // For IE 8/9 CORS support
 	  // Only supports POST and GET calls and doesn't returns the response headers.
-	  if (window.XDomainRequest && !('withCredentials' in request) && !isURLSameOrigin(config.url)) {
+	  // DON'T do this for testing b/c XMLHttpRequest is mocked, not XDomainRequest.
+	  if ((undefined) !== 'test' && window.XDomainRequest && !('withCredentials' in request) && !isURLSameOrigin(config.url)) {
 	    request = new window.XDomainRequest();
+	    loadEvent = 'onload';
+	    xDomain = true;
 	  }
 	
 	  // HTTP basic authentication
@@ -583,14 +586,30 @@ return /******/ (function(modules) { // webpackBootstrap
 	  // Set the request timeout in MS
 	  request.timeout = config.timeout;
 	
+	  // For IE 9 CORS support.
+	  request.onprogress = function handleProgress() {};
+	  request.ontimeout = function handleTimeout() {
+	    var err = new Error('timeout of ' + config.timeout + 'ms exceeded');
+	    err.timeout = config.timeout;
+	    err.code = 'ECONNABORTED';
+	    reject(err);
+	  };
+	
 	  // Listen for ready state
-	  request.onload = function handleLoad() {
-	    if (!request) {
+	  request[loadEvent] = function handleLoad() {
+	    if (!request || (request.readyState !== 4 && !xDomain)) {
 	      return;
 	    }
+	
+	    // The request errored out and we didn't get a response, this will be
+	    // handled by onerror instead
+	    if (request.status === 0) {
+	      return;
+	    }
+	
 	    // Prepare the response
 	    var responseHeaders = 'getAllResponseHeaders' in request ? parseHeaders(request.getAllResponseHeaders()) : null;
-	    var responseData = ['text', ''].indexOf(config.responseType || '') !== -1 ? request.responseText : request.response;
+	    var responseData = !config.responseType || config.responseType === 'text' ? request.responseText : request.response;
 	    var response = {
 	      data: transformData(
 	        responseData,
@@ -606,7 +625,7 @@ return /******/ (function(modules) { // webpackBootstrap
 	
 	    // Resolve or reject the Promise based on the status
 	    ((response.status >= 200 && response.status < 300) ||
-	     (!('status' in request) && response.responseText) ?
+	     (!('status' in request) && request.responseText) ?
 	      resolve :
 	      reject)(response);
 	
@@ -619,6 +638,17 @@ return /******/ (function(modules) { // webpackBootstrap
 	    // Real errors are hidden from us by the browser
 	    // onerror should only fire if it's a network error
 	    reject(new Error('Network Error'));
+	
+	    // Clean up request
+	    request = null;
+	  };
+	
+	  // Handle timeout
+	  request.ontimeout = function handleTimeout() {
+	    var err = new Error('timeout of ' + config.timeout + 'ms exceeded');
+	    err.timeout = config.timeout;
+	    err.code = 'ECONNABORTED';
+	    reject(err);
 	
 	    // Clean up request
 	    request = null;
@@ -669,8 +699,22 @@ return /******/ (function(modules) { // webpackBootstrap
 	    }
 	  }
 	
+	  // Handle progress if needed
+	  if (config.progress) {
+	    if (config.method === 'post' || config.method === 'put') {
+	      request.upload.addEventListener('progress', config.progress);
+	    } else if (config.method === 'get') {
+	      request.addEventListener('progress', config.progress);
+	    }
+	  }
+	
+	  // Format request data
 	  if (utils.isArrayBuffer(requestData)) {
 	    requestData = new DataView(requestData);
+	  }
+	
+	  if (requestData === undefined) {
+	    requestData = null;
 	  }
 	
 	  // Send the request
@@ -904,12 +948,12 @@ return /******/ (function(modules) { // webpackBootstrap
 	
 	var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
 	
-	function InvalidCharacterError(message) {
-	  this.message = message;
+	function E() {
+	  this.message = 'String contains an invalid character';
 	}
-	InvalidCharacterError.prototype = new Error;
-	InvalidCharacterError.prototype.code = 5;
-	InvalidCharacterError.prototype.name = 'InvalidCharacterError';
+	E.prototype = new Error;
+	E.prototype.code = 5;
+	E.prototype.name = 'InvalidCharacterError';
 	
 	function btoa(input) {
 	  var str = String(input);
@@ -926,7 +970,7 @@ return /******/ (function(modules) { // webpackBootstrap
 	  ) {
 	    charCode = str.charCodeAt(idx += 3 / 4);
 	    if (charCode > 0xFF) {
-	      throw new InvalidCharacterError('INVALID_CHARACTER_ERR: DOM Exception 5');
+	      throw new E();
 	    }
 	    block = block << 8 | charCode;
 	  }
