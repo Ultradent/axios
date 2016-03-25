@@ -589,7 +589,6 @@ return /******/ (function(modules) { // webpackBootstrap
 	  // For IE 9 CORS support.
 	  request.onprogress = function handleProgress() {};
 	  request.ontimeout = function handleTimeout() {
-	    console.log( 'handle timeout' );
 	    var err = new Error('timeout of ' + config.timeout + 'ms exceeded');
 	    err.timeout = config.timeout;
 	    err.code = 'ECONNABORTED';
